@@ -18,6 +18,8 @@
 ##                                                                           ##
 ###############################################################################
 
+QT += core widgets network
+
 TEMPLATE = lib
 CONFIG += staticlib flat
 
