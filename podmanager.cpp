@@ -86,7 +86,7 @@ bool PodManager::removePod(QString repository, QString podName) {
     QDir::setCurrent(repository);
 
     int deinitResult, remove1Result, remove2Result;
-    deinitResult = QProcess::execute(QString("git submodule deinit %1").arg(podName));
+    deinitResult = QProcess::execute(QString("git submodule deinit -f %1").arg(podName));
     if(deinitResult == 0) {
         remove1Result = QProcess::execute(QString("git rm -rf %1").arg(podName));
         if(remove1Result == 0) {
