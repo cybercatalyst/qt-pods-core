@@ -176,11 +176,8 @@ QList<Pod> PodManager::availablePods(QStringList sources) {
         return QList<Pod>();
     }
 
-    qDebug() << "Updating available pods.";
     QList<Pod> pods;
     foreach(QString source, sources) {
-        qDebug() << "Updating from source: " << source;
-
         QNetworkRequest request;
         request.setUrl(QUrl(source));
         QNetworkReply *reply = _networkAccessManager.get(request);
@@ -192,8 +189,6 @@ QList<Pod> PodManager::availablePods(QStringList sources) {
 
         if(reply->error() != QNetworkReply::NoError) {
             qDebug() << reply->errorString();
-        } else {
-            qDebug() << reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toString();
         }
 
         QJsonParseError parseError;
@@ -208,10 +203,7 @@ QList<Pod> PodManager::availablePods(QStringList sources) {
                 pod.name = key;
                 pod.url = object.value(key).toString();
                 pods.append(pod);
-                qDebug() << "Found pod: " << pod.name;
             }
-        } else {
-            qDebug() << source << " is a malformed source: " << parseError.errorString();
         }
     }
     return pods;
