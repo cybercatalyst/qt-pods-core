@@ -28,16 +28,30 @@
 #include <QObject>
 #include <QNetworkAccessManager>
 
+/**
+ * Central class for performing pod operations.
+ * Please be aware that no matter what these methods do, they are
+ * all blocking.
+ */
 class PodManager : public QObject {
     Q_OBJECT
 public:
     PodManager(QObject *parent = 0);
 
-    bool isValidRepository(QString repository);
+    /** @returns true it the provided repository is a git repository. */
+    bool isGitRepository(QString repository);
 
-    void installPod(QString repository, Pod pod);
-    void removePod(QString repository, QString podName);
-    void updatePods(QString repository);
+    /** Install the given pod to the repository. */
+    bool installPod(QString repository, Pod pod);
+
+    /** Removes the given pod from the repository. */
+    bool removePod(QString repository, QString podName);
+
+    /** Updates the given pod. */
+    bool updatePod(QString repository, QString podName);
+
+    /** Updates all pod in a repository. */
+    bool updatePods(QString repository);
 
     /** @returns a list of all installed pods in a repository. */
     QList<Pod> installedPods(QString repository);
@@ -51,8 +65,19 @@ public:
      */
     void generatePodsPri(QString repository);
 
+    /**
+     * Regenerates the pods-subdirs.pri for the given repository.
+     * @param repository
+     */
     void generatePodsSubdirsPri(QString repository);
 
+    /**
+     * Regenerates the subdirs *.pro file for the given repository,
+     * if it doesn't exit yet. The file is named exactly as the repositories
+     * name in order to stick to the naming convention, that each directory
+     * should contain a single project file with the same name.
+     * @param repository
+     */
     void generateSubdirsPro(QString repository);
 
     /**
