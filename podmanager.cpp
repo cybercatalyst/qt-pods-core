@@ -33,16 +33,21 @@
 
 PodManager::PodManager(QObject *parent)
     : QObject(parent) {
+    qRegisterMetaType<QList<Pod> >("QList<Pod>");
+    _networkAccessManager = new QNetworkAccessManager(this);
 }
 
 bool PodManager::isGitRepository(QString repository) {
     QDir dir(repository);
     QString gitPath = dir.filePath(".git");
-    return QFile::exists(gitPath);
+    bool result = QFile::exists(gitPath);
+    emit isGitRepositoryFinished(repository, result);
+    return result;
 }
 
 bool PodManager::installPod(QString repository, Pod pod) {
     if(!isGitRepository(repository)) {
+        emit installPodFinished(repository, pod, false);
         return false;
     }
 
@@ -54,38 +59,58 @@ bool PodManager::installPod(QString repository, Pod pod) {
     QDir::setCurrent(cwd.absolutePath());
 
     if(result != 0) {
+        emit installPodFinished(repository, pod, false);
         return false;
     }
 
     generatePodsPri(repository);
     generatePodsSubdirsPri(repository);
     generateSubdirsPro(repository);
+
+    emit installPodFinished(repository, pod, true);
     return true;
 }
 
-bool PodManager::removePod(QString repository, QString podName) {
+bool PodManager::installPods(QString repository, QList<Pod> pods) {
     if(!isGitRepository(repository)) {
-        return false;
-    }
-
-    // Check if the repository actually contains such a pod.
-    QList<Pod> pods = installedPods(repository);
-    bool repositoryContainsPod = false;
-    foreach(Pod pod, pods) {
-        if(pod.name == podName) {
-            repositoryContainsPod = true;
-            break;
-        }
-    }
-
-    if(!repositoryContainsPod) {
+        emit installPodsFinished(repository, pods, false);
         return false;
     }
 
     QDir cwd = QDir::current();
     QDir::setCurrent(repository);
 
-    int deinitResult, remove1Result, remove2Result;
+    bool success = true;
+    foreach(Pod pod, pods) {
+        int result = QProcess::execute(QString("git submodule add %1 %2").arg(pod.url).arg(pod.name));
+        success = success && (result == 0);
+    }
+
+    QDir::setCurrent(cwd.absolutePath());
+
+    if(!success) {
+        emit installPodsFinished(repository, pods, false);
+        return false;
+    }
+
+    generatePodsPri(repository);
+    generatePodsSubdirsPri(repository);
+    generateSubdirsPro(repository);
+
+    emit installPodsFinished(repository, pods, true);
+    return true;
+}
+
+bool PodManager::removePod(QString repository, QString podName) {
+    if(!isGitRepository(repository)) {
+        emit removePodFinished(repository, podName, false);
+        return false;
+    }
+
+    QDir cwd = QDir::current();
+    QDir::setCurrent(repository);
+
+    int deinitResult = -1, remove1Result = -1, remove2Result = -1;
     deinitResult = QProcess::execute(QString("git submodule deinit -f %1").arg(podName));
     if(deinitResult == 0) {
         remove1Result = QProcess::execute(QString("git rm -rf %1").arg(podName));
@@ -97,6 +122,7 @@ bool PodManager::removePod(QString repository, QString podName) {
     QDir::setCurrent(cwd.absolutePath());
 
     if((deinitResult != 0) && (remove1Result != 0) && (remove2Result != 0)) {
+        emit removePodFinished(repository, podName, false);
         return false;
     }
 
@@ -104,18 +130,57 @@ bool PodManager::removePod(QString repository, QString podName) {
     generatePodsSubdirsPri(repository);
     generateSubdirsPro(repository);
 
+    emit removePodFinished(repository, podName, true);
+    return true;
+}
+
+bool PodManager::removePods(QString repository, QStringList podNames) {
+    if(!isGitRepository(repository)) {
+        emit removePodsFinished(repository, podNames, false);
+        return false;
+    }
+
+    QDir cwd = QDir::current();
+    QDir::setCurrent(repository);
+
+    bool success = true;
+    foreach(QString podName, podNames) {
+        int deinitResult = -1, remove1Result = -1, remove2Result = -1;
+        deinitResult = QProcess::execute(QString("git submodule deinit -f %1").arg(podName));
+        if(deinitResult == 0) {
+            remove1Result = QProcess::execute(QString("git rm -rf %1").arg(podName));
+            if(remove1Result == 0) {
+                remove2Result = QProcess::execute(QString("rm -rf %1/.git/modules/%2").arg(repository).arg(podName));
+            }
+        }
+        success = success && ((deinitResult == 0) && (remove1Result == 0) && (remove2Result == 0));
+    }
+
+    QDir::setCurrent(cwd.absolutePath());
+
+    if(!success) {
+        emit removePodsFinished(repository, podNames, false);
+        return false;
+    }
+
+    generatePodsPri(repository);
+    generatePodsSubdirsPri(repository);
+    generateSubdirsPro(repository);
+
+    emit removePodsFinished(repository, podNames, true);
     return true;
 }
 
 bool PodManager::updatePod(QString repository, QString podName) {
     if(!isGitRepository(repository)) {
+        emit updatePodFinished(repository, podName, false);
         return false;
     }
 
     QDir cwd = QDir::current();
     QDir::setCurrent(QDir(repository).absoluteFilePath(podName));
 
-    int stashResult, checkoutResult, pullResult;
+    int stashResult = 1, checkoutResult = 1, pullResult = 1;
     stashResult = QProcess::execute(QString("git stash"));
     if(stashResult == 0) {
         checkoutResult = QProcess::execute(QString("git checkout master"));
@@ -123,12 +188,48 @@ bool PodManager::updatePod(QString repository, QString podName) {
             pullResult = QProcess::execute(QString("git pull"));
         }
     }
+
     QDir::setCurrent(cwd.absolutePath());
-    return (stashResult == 0) && (checkoutResult == 0) && (pullResult == 0);
+    bool result = (stashResult == 0) && (checkoutResult == 0) && (pullResult == 0);
+    emit updatePodFinished(repository, podName, result);
+    return result;
 }
 
-bool PodManager::updatePods(QString repository) {
+bool PodManager::updatePods(QString repository, QStringList podNames) {
     if(!isGitRepository(repository)) {
+        emit updatePodsFinished(repository, podNames, false);
+        return false;
+    }
+
+    QDir cwd = QDir::current();
+
+    bool success = true;
+    foreach(QString podName, podNames) {
+        QDir::setCurrent(QDir(repository).absoluteFilePath(podName));
+
+        int stashResult = 1, checkoutResult = 1, pullResult = 1;
+        stashResult = QProcess::execute(QString("git stash"));
+        if(stashResult == 0) {
+            checkoutResult = QProcess::execute(QString("git checkout master"));
+            if(checkoutResult == 0) {
+                pullResult = QProcess::execute(QString("git pull"));
+            }
+        }
+        success = success && ((stashResult == 0) && (checkoutResult == 0) && (pullResult == 0));
+    }
+
+    QDir::setCurrent(cwd.absolutePath());
+
+    if(!success) {
+        emit updatePodsFinished(repository, podNames, false);
+    }
+    emit updatePodsFinished(repository, podNames, true);
+    return true;
+}
+
+bool PodManager::updateAllPods(QString repository) {
+    if(!isGitRepository(repository)) {
+        emit updateAllPodsFinished(repository, false);
         return false;
     }
 
@@ -139,6 +240,7 @@ bool PodManager::updatePods(QString repository) {
     }
 
     if(!result) {
+        emit updateAllPodsFinished(repository, false);
         return false;
     }
 
@@ -146,6 +248,7 @@ bool PodManager::updatePods(QString repository) {
     generatePodsSubdirsPri(repository);
     generateSubdirsPro(repository);
 
+    emit updateAllPodsFinished(repository, true);
     return true;
 }
 
@@ -167,11 +270,12 @@ QList<Pod> PodManager::installedPods(QString repository) {
             }
         }
     }
+    emit installedPodsFinished(repository, pods);
     return pods;
 }
 
 QList<Pod> PodManager::availablePods(QStringList sources) {
-    if(_networkAccessManager.networkAccessible() == QNetworkAccessManager::NotAccessible) {
+    if(_networkAccessManager->networkAccessible() == QNetworkAccessManager::NotAccessible) {
         qDebug() << "No network connection available.";
         return QList<Pod>();
     }
@@ -180,7 +284,7 @@ QList<Pod> PodManager::availablePods(QStringList sources) {
     foreach(QString source, sources) {
         QNetworkRequest request;
         request.setUrl(QUrl(source));
-        QNetworkReply *reply = _networkAccessManager.get(request);
+        QNetworkReply *reply = _networkAccessManager->get(request);
         QEventLoop loop;
         connect(reply, SIGNAL(finished()), &loop, SLOT(quit()));
         loop.exec();
@@ -206,6 +310,8 @@ QList<Pod> PodManager::availablePods(QStringList sources) {
             }
         }
     }
+
+    emit availablePodsFinished(sources, pods);
     return pods;
 }
 
@@ -233,6 +339,7 @@ void PodManager::generatePodsPri(QString repository) {
         file.write(podsPri.toUtf8());
         file.close();
     }
+    emit generatePodsPriFinished(repository);
 }
 
 void PodManager::generatePodsSubdirsPri(QString repository) {
@@ -254,6 +361,7 @@ void PodManager::generatePodsSubdirsPri(QString repository) {
         file.write(podsSubdirsPri.toUtf8());
         file.close();
     }
+    emit generatePodsSubdirsPriFinished(repository);
 }
 
 void PodManager::generateSubdirsPro(QString repository) {
@@ -267,15 +375,18 @@ void PodManager::generateSubdirsPro(QString repository) {
             file.close();
         }
     }
+    emit generateSubdirsProFinished(repository);
 }
 
 bool PodManager::checkPod(QString repository, QString podName) {
     QDir dir(repository);
-    return (podName == podName.toLower()) &&
-        dir.cd(podName) &&
-        QFile::exists(dir.filePath("LICENSE")) &&
-        QFile::exists(dir.filePath("README.md")) &&
-        QFile::exists(dir.filePath(podName + ".pri")) &&
-        QFile::exists(dir.filePath(podName + ".pro"));
+    bool isValidPod = (podName == podName.toLower()) &&
+            dir.cd(podName) &&
+            QFile::exists(dir.filePath("LICENSE")) &&
+            QFile::exists(dir.filePath("README.md")) &&
+            QFile::exists(dir.filePath(podName + ".pri")) &&
+            QFile::exists(dir.filePath(podName + ".pro"));
+    emit checkPodFinished(repository, podName, isValidPod);
+    return isValidPod;
 }
 

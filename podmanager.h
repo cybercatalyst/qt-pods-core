@@ -38,20 +38,24 @@ class PodManager : public QObject {
 public:
     PodManager(QObject *parent = 0);
 
+public slots:
     /** @returns true it the provided repository is a git repository. */
     bool isGitRepository(QString repository);
 
     /** Install the given pod to the repository. */
     bool installPod(QString repository, Pod pod);
+    bool installPods(QString repository, QList<Pod> pods);
 
     /** Removes the given pod from the repository. */
     bool removePod(QString repository, QString podName);
+    bool removePods(QString repository, QStringList podNames);
 
     /** Updates the given pod. */
     bool updatePod(QString repository, QString podName);
+    bool updatePods(QString repository, QStringList podNames);
 
-    /** Updates all pod in a repository. */
-    bool updatePods(QString repository);
+    /** Updates all pods in a repository. */
+    bool updateAllPods(QString repository);
 
     /** @returns a list of all installed pods in a repository. */
     QList<Pod> installedPods(QString repository);
@@ -92,6 +96,22 @@ public:
      */
     bool checkPod(QString repository, QString podName);
 
+signals:
+    void isGitRepositoryFinished(QString repository, bool isGitRepository);
+    void installPodFinished(QString repository, Pod pod, bool success);
+    void installPodsFinished(QString repository, QList<Pod> pods, bool success);
+    void removePodFinished(QString repository, QString podName, bool success);
+    void removePodsFinished(QString repository, QStringList podNames, bool success);
+    void updatePodFinished(QString repository, QString podName, bool success);
+    void updatePodsFinished(QString repository, QStringList podNames, bool success);
+    void updateAllPodsFinished(QString repository, bool success);
+    void installedPodsFinished(QString repository, QList<Pod> installedPods);
+    void availablePodsFinished(QStringList sources, QList<Pod> availablePods);
+    void generatePodsPriFinished(QString repository);
+    void generatePodsSubdirsPriFinished(QString repository);
+    void generateSubdirsProFinished(QString repository);
+    void checkPodFinished(QString repository, QString podName, bool isValidPod);
+
 private:
-    QNetworkAccessManager _networkAccessManager;
+    QNetworkAccessManager *_networkAccessManager;
 };
