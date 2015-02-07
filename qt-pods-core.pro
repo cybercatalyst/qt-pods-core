@@ -21,7 +21,7 @@
 QT += core widgets network
 
 TEMPLATE = lib
-CONFIG += staticlib flat
+CONFIG += staticlib
 
 SOURCES += \
     podmanager.cpp
@@ -29,3 +29,4 @@ SOURCES += \
 HEADERS += \
     pod.h \
     podmanager.h
+
