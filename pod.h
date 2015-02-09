@@ -25,5 +25,10 @@
 
 struct Pod {
     QString name;
+    QString author;
+    QString license;
+    QString description;
+
     QString url;
+    QString website;
 };

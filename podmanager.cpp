@@ -303,10 +303,17 @@ QList<Pod> PodManager::availablePods(QStringList sources) {
             QStringList keys = object.keys();
 
             foreach(QString key, keys) {
-                Pod pod;
-                pod.name = key;
-                pod.url = object.value(key).toString();
-                pods.append(pod);
+                if(object.value(key).isObject()) {
+                    // New format
+
+
+                } else {
+                    // Old format: pod name and url
+                    Pod pod;
+                    pod.name = key;
+                    pod.url = object.value(key).toString();
+                    pods.append(pod);
+                }
             }
         }
     }
