@@ -113,5 +113,7 @@ signals:
     void checkPodFinished(QString repository, QString podName, bool isValidPod);
 
 private:
+    void updateMetaDataForPod(QString repository, Pod pod);
+
     QNetworkAccessManager *_networkAccessManager;
 };

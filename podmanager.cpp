@@ -56,6 +56,9 @@ bool PodManager::installPod(QString repository, Pod pod) {
 
     int result = QProcess::execute(QString("git submodule add %1 %2").arg(pod.url).arg(pod.name));
 
+    // Try to store meta data in .gitmodules
+    updateMetaDataForPod(repository, pod);
+
     QDir::setCurrent(cwd.absolutePath());
 
     if(result != 0) {
@@ -83,6 +86,7 @@ bool PodManager::installPods(QString repository, QList<Pod> pods) {
     bool success = true;
     foreach(Pod pod, pods) {
         int result = QProcess::execute(QString("git submodule add %1 %2").arg(pod.url).arg(pod.name));
+        updateMetaDataForPod(repository, pod);
         success = success && (result == 0);
     }
 
@@ -263,8 +267,12 @@ QList<Pod> PodManager::installedPods(QString repository) {
             if(childGroup.startsWith("submodule")) {
                 gitmodules.beginGroup(childGroup);
                 Pod pod;
-                pod.name = gitmodules.value("path").toString();
-                pod.url  = gitmodules.value("url").toString();
+                pod.name        = gitmodules.value("path").toString();
+                pod.url         = gitmodules.value("url").toString();
+                pod.author      = gitmodules.value("author").toString();
+                pod.description = gitmodules.value("description").toString();
+                pod.license     = gitmodules.value("license").toString();
+                pod.website     = gitmodules.value("website").toString();
                 pods.append(pod);
                 gitmodules.endGroup();
             }
@@ -277,6 +285,7 @@ QList<Pod> PodManager::installedPods(QString repository) {
 QList<Pod> PodManager::availablePods(QStringList sources) {
     if(_networkAccessManager->networkAccessible() == QNetworkAccessManager::NotAccessible) {
         qDebug() << "No network connection available.";
+        emit availablePodsFinished(sources, QList<Pod>());
         return QList<Pod>();
     }
 
@@ -299,19 +308,26 @@ QList<Pod> PodManager::availablePods(QStringList sources) {
         QJsonDocument document = QJsonDocument::fromJson(response, &parseError);
 
         if(QJsonParseError::NoError == parseError.error) {
-            QJsonObject object = document.object();
-            QStringList keys = object.keys();
+            QJsonObject object      = document.object();
+            QStringList keys        = object.keys();
 
             foreach(QString key, keys) {
                 if(object.value(key).isObject()) {
                     // New format
-
+                    QJsonObject metaObject = object.value(key).toObject();
+                    Pod pod;
+                    pod.name        = key;
+                    pod.url         = metaObject.value("url").toString();
+                    pod.author      = metaObject.value("author").toString();
+                    pod.description = metaObject.value("description").toString();
+                    pod.license     = metaObject.value("license").toString();
+                    pods.append(pod);
 
                 } else {
                     // Old format: pod name and url
                     Pod pod;
-                    pod.name = key;
-                    pod.url = object.value(key).toString();
+                    pod.name        = key;
+                    pod.url         = object.value(key).toString();
                     pods.append(pod);
                 }
             }
@@ -391,4 +407,24 @@ bool PodManager::checkPod(QString repository, QString podName) {
     emit checkPodFinished(repository, podName, isValidPod);
     return isValidPod;
 }
+
+void PodManager::updateMetaDataForPod(QString repository, Pod pod) {
+    QDir dir(repository);
+    QString gitmodulesPath = dir.filePath(".gitmodules");
+    if(QFile::exists(gitmodulesPath)) {
+        QSettings gitmodules(gitmodulesPath, QSettings::IniFormat);
+        QStringList childGroups = gitmodules.childGroups();
+        QString groupName = QString("submodule \"%1\"").arg(pod.name);
+        if(childGroups.contains(groupName)) {
+            gitmodules.beginGroup(groupName);
+            gitmodules.setValue("podid", pod.name);
+            gitmodules.setValue("author", pod.author);
+            gitmodules.setValue("description", pod.description);
+            gitmodules.setValue("license", pod.license);
+            gitmodules.setValue("website", pod.website);
+            gitmodules.endGroup();
+        }
+    }
+}
+
 
