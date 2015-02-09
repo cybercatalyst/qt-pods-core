@@ -56,9 +56,6 @@ bool PodManager::installPod(QString repository, Pod pod) {
 
     int result = QProcess::execute(QString("git submodule add %1 %2").arg(pod.url).arg(pod.name));
 
-    // Try to store meta data in .gitmodules
-    updateMetaDataForPod(repository, pod);
-
     QDir::setCurrent(cwd.absolutePath());
 
     if(result != 0) {
@@ -66,6 +63,8 @@ bool PodManager::installPod(QString repository, Pod pod) {
         return false;
     }
 
+    // Try to store meta data in .gitmodules
+    writePodInfo(repository, pod);
     generatePodsPri(repository);
     generatePodsSubdirsPri(repository);
     generateSubdirsPro(repository);
@@ -86,7 +85,9 @@ bool PodManager::installPods(QString repository, QList<Pod> pods) {
     bool success = true;
     foreach(Pod pod, pods) {
         int result = QProcess::execute(QString("git submodule add %1 %2").arg(pod.url).arg(pod.name));
-        updateMetaDataForPod(repository, pod);
+        if(result == 0) {
+            writePodInfo(repository, pod);
+        }
         success = success && (result == 0);
     }
 
@@ -130,6 +131,7 @@ bool PodManager::removePod(QString repository, QString podName) {
         return false;
     }
 
+    purgePodInfo(repository, podName);
     generatePodsPri(repository);
     generatePodsSubdirsPri(repository);
     generateSubdirsPro(repository);
@@ -155,6 +157,7 @@ bool PodManager::removePods(QString repository, QStringList podNames) {
             remove1Result = QProcess::execute(QString("git rm -rf %1").arg(podName));
             if(remove1Result == 0) {
                 remove2Result = QProcess::execute(QString("rm -rf %1/.git/modules/%2").arg(repository).arg(podName));
+                purgePodInfo(repository, podName);
             }
         }
         success = success && ((deinitResult == 0) && (remove1Result == 0) && (remove2Result == 0));
@@ -262,6 +265,7 @@ QList<Pod> PodManager::installedPods(QString repository) {
     QString gitmodulesPath = dir.filePath(".gitmodules");
     if(QFile::exists(gitmodulesPath)) {
         QSettings gitmodules(gitmodulesPath, QSettings::IniFormat);
+        gitmodules.setIniCodec("UTF-8");
         QStringList childGroups = gitmodules.childGroups();
         foreach(QString childGroup, childGroups) {
             if(childGroup.startsWith("submodule")) {
@@ -269,10 +273,7 @@ QList<Pod> PodManager::installedPods(QString repository) {
                 Pod pod;
                 pod.name        = gitmodules.value("path").toString();
                 pod.url         = gitmodules.value("url").toString();
-                pod.author      = gitmodules.value("author").toString();
-                pod.description = gitmodules.value("description").toString();
-                pod.license     = gitmodules.value("license").toString();
-                pod.website     = gitmodules.value("website").toString();
+                readPodInfo(repository, pod);
                 pods.append(pod);
                 gitmodules.endGroup();
             }
@@ -408,23 +409,46 @@ bool PodManager::checkPod(QString repository, QString podName) {
     return isValidPod;
 }
 
-void PodManager::updateMetaDataForPod(QString repository, Pod pod) {
+
+void PodManager::purgePodInfo(QString repository, QString podName) {
     QDir dir(repository);
-    QString gitmodulesPath = dir.filePath(".gitmodules");
-    if(QFile::exists(gitmodulesPath)) {
-        QSettings gitmodules(gitmodulesPath, QSettings::IniFormat);
-        QStringList childGroups = gitmodules.childGroups();
-        QString groupName = QString("submodule \"%1\"").arg(pod.name);
-        if(childGroups.contains(groupName)) {
-            gitmodules.beginGroup(groupName);
-            gitmodules.setValue("podid", pod.name);
-            gitmodules.setValue("author", pod.author);
-            gitmodules.setValue("description", pod.description);
-            gitmodules.setValue("license", pod.license);
-            gitmodules.setValue("website", pod.website);
-            gitmodules.endGroup();
-        }
+    QString podinfoPath = dir.filePath(".podinfo");
+    QSettings podinfo(podinfoPath, QSettings::IniFormat);
+    podinfo.setIniCodec("UTF-8");
+    podinfo.remove(podName);
+    podinfo.sync();
+}
+
+void PodManager::writePodInfo(QString repository, Pod pod) {
+    QDir dir(repository);
+    QString podinfoPath = dir.filePath(".podinfo");
+    QSettings podinfo(podinfoPath, QSettings::IniFormat);
+    podinfo.setIniCodec("UTF-8");
+    podinfo.beginGroup(pod.name);
+        podinfo.setValue("author", pod.author);
+        podinfo.setValue("description", pod.description);
+        podinfo.setValue("license", pod.license);
+        podinfo.setValue("website", pod.website);
+        podinfo.endGroup();
+    podinfo.sync();
+}
+
+void PodManager::readPodInfo(QString repository, Pod& pod) {
+    QDir dir(repository);
+    QString podinfoPath = dir.filePath(".podinfo");
+    QSettings podinfo(podinfoPath, QSettings::IniFormat);
+    podinfo.setIniCodec("UTF-8");
+    QStringList childGroups = podinfo.childGroups();
+    if(childGroups.contains(pod.name)) {
+        podinfo.beginGroup(pod.name);
+        pod.author = podinfo.value("author").toString();
+        pod.description = podinfo.value("description").toString();
+        pod.license = podinfo.value("license").toString();
+        pod.website = podinfo.value("website").toString();
+        podinfo.endGroup();
     }
 }
+
+
 
 
