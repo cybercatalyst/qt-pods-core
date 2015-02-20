@@ -117,5 +117,7 @@ private:
     void writePodInfo(QString repository, Pod pod);
     void readPodInfo(QString repository, Pod& pod);
 
+    void stageFile(QString repository, QString fileName);
+
     QNetworkAccessManager *_networkAccessManager;
 };

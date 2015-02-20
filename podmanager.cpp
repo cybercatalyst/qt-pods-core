@@ -351,13 +351,14 @@ void PodManager::generatePodsPri(QString repository) {
         .arg(header)
         .arg(includePris);
 
-
     QFile file(QDir(repository).filePath("pods.pri"));
     file.remove();
     if(file.open(QFile::ReadWrite)) {
         file.write(podsPri.toUtf8());
         file.close();
     }
+    stageFile(repository, file.fileName());
+
     emit generatePodsPriFinished(repository);
 }
 
@@ -380,6 +381,8 @@ void PodManager::generatePodsSubdirsPri(QString repository) {
         file.write(podsSubdirsPri.toUtf8());
         file.close();
     }
+    stageFile(repository, file.fileName());
+
     emit generatePodsSubdirsPriFinished(repository);
 }
 
@@ -394,6 +397,8 @@ void PodManager::generateSubdirsPro(QString repository) {
             file.close();
         }
     }
+    stageFile(repository, file.fileName());
+
     emit generateSubdirsProFinished(repository);
 }
 
@@ -417,6 +422,8 @@ void PodManager::purgePodInfo(QString repository, QString podName) {
     podinfo.setIniCodec("UTF-8");
     podinfo.remove(podName);
     podinfo.sync();
+
+    stageFile(repository, ".podinfo");
 }
 
 void PodManager::writePodInfo(QString repository, Pod pod) {
@@ -431,6 +438,8 @@ void PodManager::writePodInfo(QString repository, Pod pod) {
         podinfo.setValue("website", pod.website);
         podinfo.endGroup();
     podinfo.sync();
+
+    stageFile(repository, ".podinfo");
 }
 
 void PodManager::readPodInfo(QString repository, Pod& pod) {
@@ -449,6 +458,11 @@ void PodManager::readPodInfo(QString repository, Pod& pod) {
     }
 }
 
+void PodManager::stageFile(QString repository, QString fileName) {
+    QDir cwd = QDir::current();
+    QDir::setCurrent(repository);
 
+    QProcess::execute(QString("git add %1").arg(fileName));
 
-
+    QDir::setCurrent(cwd.absolutePath());
+}
