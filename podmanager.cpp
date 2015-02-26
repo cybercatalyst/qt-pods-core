@@ -285,7 +285,9 @@ QList<Pod> PodManager::installedPods(QString repository) {
 
 QList<Pod> PodManager::availablePods(QStringList sources) {
     if(_networkAccessManager->networkAccessible() == QNetworkAccessManager::NotAccessible) {
+#ifdef QT_DEBUG
         qDebug() << "No network connection available.";
+#endif
         emit availablePodsFinished(sources, QList<Pod>());
         return QList<Pod>();
     }
@@ -301,10 +303,11 @@ QList<Pod> PodManager::availablePods(QStringList sources) {
 
         QByteArray response = reply->readAll();
 
+#ifdef QT_DEBUG
         if(reply->error() != QNetworkReply::NoError) {
             qDebug() << reply->errorString();
         }
-
+#endif
         QJsonParseError parseError;
         QJsonDocument document = QJsonDocument::fromJson(response, &parseError);
 
