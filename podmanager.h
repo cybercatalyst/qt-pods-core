@@ -58,10 +58,10 @@ public slots:
     bool updateAllPods(QString repository);
 
     /** @returns a list of all installed pods in a repository. */
-    QList<Pod> installedPods(QString repository);
+    QList<Pod> listInstalledPods(QString repository);
 
     /** @returns a list of all available pods from the given sources. */
-    QList<Pod> availablePods(QStringList sources);
+    QList<Pod> listAvailablePods(QStringList sources);
 
     /**
      * Regenerates the pods.pri for the given repository.
@@ -105,8 +105,8 @@ signals:
     void updatePodFinished(QString repository, QString podName, bool success);
     void updatePodsFinished(QString repository, QStringList podNames, bool success);
     void updateAllPodsFinished(QString repository, bool success);
-    void installedPodsFinished(QString repository, QList<Pod> installedPods);
-    void availablePodsFinished(QStringList sources, QList<Pod> availablePods);
+    void listInstalledPodsFinished(QString repository, QList<Pod> listInstalledPods);
+    void listAvailablePodsFinished(QStringList sources, QList<Pod> listAvailablePods);
     void generatePodsPriFinished(QString repository);
     void generatePodsSubdirsPriFinished(QString repository);
     void generateSubdirsProFinished(QString repository);
@@ -118,6 +118,7 @@ private:
     void readPodInfo(QString repository, Pod& pod);
 
     void stageFile(QString repository, QString fileName);
+    void waitForReply(QNetworkReply *reply);
 
     QNetworkAccessManager *_networkAccessManager;
 };

@@ -187,7 +187,7 @@ bool PodManager::updatePod(QString repository, QString podName) {
     QDir cwd = QDir::current();
     QDir::setCurrent(QDir(repository).absoluteFilePath(podName));
 
-    int stashResult = 1, checkoutResult = 1, pullResult = 1;
+    int stashResult = 1, checkoutResult = 1, pullResult = 1, stashApplyResult = 1;
     stashResult = QProcess::execute(QString("git stash"));
     if(stashResult == 0) {
         checkoutResult = QProcess::execute(QString("git checkout master"));
@@ -197,7 +197,7 @@ bool PodManager::updatePod(QString repository, QString podName) {
     }
 
     QDir::setCurrent(cwd.absolutePath());
-    bool result = (stashResult == 0) && (checkoutResult == 0) && (pullResult == 0);
+    bool result = (stashResult == 0) && (checkoutResult == 0) && (pullResult == 0) && (stashApplyResult == 0);
     emit updatePodFinished(repository, podName, result);
     return result;
 }
@@ -241,9 +241,9 @@ bool PodManager::updateAllPods(QString repository) {
     }
 
     bool result = false;
-    QList<Pod> pods = installedPods(repository);
+    QList<Pod> pods = listInstalledPods(repository);
     foreach(Pod pod, pods) {
-        result = result && updatePod(repository, pod.name);
+        result = updatePod(repository, pod.name) && result;
     }
 
     if(!result) {
@@ -259,36 +259,47 @@ bool PodManager::updateAllPods(QString repository) {
     return true;
 }
 
-QList<Pod> PodManager::installedPods(QString repository) {
+QList<Pod> PodManager::listInstalledPods(QString repository) {
     QList<Pod> pods;
     QDir dir(repository);
+
+    // Check if there is a .gitmodules file available
     QString gitmodulesPath = dir.filePath(".gitmodules");
     if(QFile::exists(gitmodulesPath)) {
+        // We can use QSettings to read the .gitmodules in INI format
         QSettings gitmodules(gitmodulesPath, QSettings::IniFormat);
         gitmodules.setIniCodec("UTF-8");
+
+        // In git, each submodule has a child entry
         QStringList childGroups = gitmodules.childGroups();
         foreach(QString childGroup, childGroups) {
             if(childGroup.startsWith("submodule")) {
+                // If it is a submodule, enter the group
                 gitmodules.beginGroup(childGroup);
                 Pod pod;
                 pod.name        = gitmodules.value("path").toString();
                 pod.url         = gitmodules.value("url").toString();
+
+                // Try to access the local pod info file in order to
+                // get meta information about the pod
                 readPodInfo(repository, pod);
+
+                // Append pod to list
                 pods.append(pod);
                 gitmodules.endGroup();
             }
         }
     }
-    emit installedPodsFinished(repository, pods);
+    emit listInstalledPodsFinished(repository, pods);
     return pods;
 }
 
-QList<Pod> PodManager::availablePods(QStringList sources) {
+QList<Pod> PodManager::listAvailablePods(QStringList sources) {
     if(_networkAccessManager->networkAccessible() == QNetworkAccessManager::NotAccessible) {
 #ifdef QT_DEBUG
         qDebug() << "No network connection available.";
 #endif
-        emit availablePodsFinished(sources, QList<Pod>());
+        emit listAvailablePodsFinished(sources, QList<Pod>());
         return QList<Pod>();
     }
 
@@ -296,10 +307,9 @@ QList<Pod> PodManager::availablePods(QStringList sources) {
     foreach(QString source, sources) {
         QNetworkRequest request;
         request.setUrl(QUrl(source));
+
         QNetworkReply *reply = _networkAccessManager->get(request);
-        QEventLoop loop;
-        connect(reply, SIGNAL(finished()), &loop, SLOT(quit()));
-        loop.exec();
+        waitForReply(reply);
 
         QByteArray response = reply->readAll();
 
@@ -318,13 +328,13 @@ QList<Pod> PodManager::availablePods(QStringList sources) {
             foreach(QString key, keys) {
                 if(object.value(key).isObject()) {
                     // New format
-                    QJsonObject metaObject = object.value(key).toObject();
+                    QJsonObject metaInformationObject = object.value(key).toObject();
                     Pod pod;
                     pod.name        = key;
-                    pod.url         = metaObject.value("url").toString();
-                    pod.author      = metaObject.value("author").toString();
-                    pod.description = metaObject.value("description").toString();
-                    pod.license     = metaObject.value("license").toString();
+                    pod.url         = metaInformationObject.value("url").toString();
+                    pod.author      = metaInformationObject.value("author").toString();
+                    pod.description = metaInformationObject.value("description").toString();
+                    pod.license     = metaInformationObject.value("license").toString();
                     pods.append(pod);
 
                 } else {
@@ -338,52 +348,69 @@ QList<Pod> PodManager::availablePods(QStringList sources) {
         }
     }
 
-    emit availablePodsFinished(sources, pods);
+    emit listAvailablePodsFinished(sources, pods);
     return pods;
 }
 
 void PodManager::generatePodsPri(QString repository) {
-    QList<Pod> pods = installedPods(repository);
+    // Get info about all installe pods
+    QList<Pod> pods = listInstalledPods(repository);
+
+    // Create a header
     QString header = QString("# Auto-generated by qt-pods. Do not edit.\n# Include this to your application project file with:\n# include(../pods.pri)\n# This file should be put under version control.\n");
+
+    // Accumulate a list of include statements for all pods
     QString includePris = "";
     foreach(Pod pod, pods) {
         includePris += QString("include(%1/%1.pri)\n").arg(pod.name);
     }
 
+    // Combine file contents
     QString podsPri = QString("%1\n%2\n")
         .arg(header)
         .arg(includePris);
 
+    // Write to file
     QFile file(QDir(repository).filePath("pods.pri"));
     file.remove();
     if(file.open(QFile::ReadWrite)) {
         file.write(podsPri.toUtf8());
         file.close();
     }
+
+    // Put under version control
     stageFile(repository, file.fileName());
 
     emit generatePodsPriFinished(repository);
 }
 
 void PodManager::generatePodsSubdirsPri(QString repository) {
-    QList<Pod> pods = installedPods(repository);
-    QString header = QString("# Auto-generated by qt-pods. Do not edit.\n# Include this to your subdirs project file with:\n# include(pods-subdirs.pri)\n# This file should be put under version control.\n");
-    QString subdirs = "SUBDIRS += ";
+    // Get info about all installed pods
+    QList<Pod> pods = listInstalledPods(repository);
 
+    // Create a header
+    QString header = QString("# Auto-generated by qt-pods. Do not edit.\n# Include this to your subdirs project file with:\n# include(pods-subdirs.pri)\n# This file should be put under version control.\n");
+
+    // Create a SUBDIRS entry that will extend the one provided in the *.pro
+    QString subdirs = "SUBDIRS += ";
     foreach(Pod pod, pods) {
         subdirs += QString("\\\n\t%1 ").arg(pod.name);
     }
 
+    // Combine file contents
     QString podsSubdirsPri = QString("%1\n%2\n\n")
         .arg(header)
         .arg(subdirs);
 
+    // Write to file
     QFile file(QDir(repository).filePath("pods-subdirs.pri"));
     file.remove();
     if(file.open(QFile::ReadWrite)) {
         file.write(podsSubdirsPri.toUtf8());
         file.close();
     }
+
+    // Put under version control
     stageFile(repository, file.fileName());
 
     emit generatePodsSubdirsPriFinished(repository);
@@ -391,7 +418,12 @@ void PodManager::generatePodsSubdirsPri(QString repository) {
 
 void PodManager::generateSubdirsPro(QString repository) {
     QDir dir(repository);
+
+    // By convention, the umbrella subdirs project is called the same as the repository name.
+    // If the repository does not contain such a file, we are going to create it with default
+    // content.
     QFile file(QDir(repository).filePath(QString("%1.pro").arg(dir.dirName())));
+
     // Just create one if it doesn't exist yet.
     if(!file.exists()) {
         if(file.open(QFile::ReadWrite)) {
@@ -400,6 +432,8 @@ void PodManager::generateSubdirsPro(QString repository) {
             file.close();
         }
     }
+
+    // Whether it has existed or not, put under version control
     stageFile(repository, file.fileName());
 
     emit generateSubdirsProFinished(repository);
@@ -416,7 +450,6 @@ bool PodManager::checkPod(QString repository, QString podName) {
     emit checkPodFinished(repository, podName, isValidPod);
     return isValidPod;
 }
-
 
 void PodManager::purgePodInfo(QString repository, QString podName) {
     QDir dir(repository);
@@ -464,8 +497,13 @@ void PodManager::readPodInfo(QString repository, Pod& pod) {
 void PodManager::stageFile(QString repository, QString fileName) {
     QDir cwd = QDir::current();
     QDir::setCurrent(repository);
-
     QProcess::execute(QString("git add %1").arg(fileName));
-
     QDir::setCurrent(cwd.absolutePath());
 }
+
+void PodManager::waitForReply(QNetworkReply *reply) {
+    QEventLoop loop;
+    connect(reply, SIGNAL(finished()), &loop, SLOT(quit()));
+    loop.exec();
+}
+
