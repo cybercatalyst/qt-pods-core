@@ -451,6 +451,28 @@ bool PodManager::checkPod(QString repository, QString podName) {
     return isValidPod;
 }
 
+bool PodManager::createProject(QString repository) {
+    if(!isGitRepository(repository)) {
+        int gitInitResult = QProcess::execute(QString("git init \"%1\"").arg(repository));
+        if(gitInitResult != 0) {
+            emit createProjectFinished(repository, false);
+            return false;
+        }
+    }
+
+    if(!isGitRepository(repository)) {
+        emit createProjectFinished(repository, false);
+        return false;
+    }
+
+    generatePodsPri(repository);
+    generatePodsSubdirsPri(repository);
+    generateSubdirsPro(repository);
+
+    emit createProjectFinished(repository, true);
+    return true;
+}
+
 void PodManager::purgePodInfo(QString repository, QString podName) {
     QDir dir(repository);
     QString podinfoPath = dir.filePath(".podinfo");

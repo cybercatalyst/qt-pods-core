@@ -31,7 +31,8 @@
 /**
  * Central class for performing pod operations.
  * Please be aware that no matter what these methods do, they are
- * all blocking.
+ * all blocking. If you need a non-blocking version, call them in a
+ * separate thread and listen for the appropriate signals.
  */
 class PodManager : public QObject {
     Q_OBJECT
@@ -92,9 +93,16 @@ public slots:
      * - pod contains LICENSE and README.md
      * @param repository
      * @param podName
-     * @return
+     * @returns true on success
      */
     bool checkPod(QString repository, QString podName);
+
+    /**
+     * Creates an empty QtPods project.
+     * @param repository The target repository.
+     * @returns true on success
+     */
+    bool createProject(QString repository);
 
 signals:
     void isGitRepositoryFinished(QString repository, bool isGitRepository);
@@ -111,6 +119,7 @@ signals:
     void generatePodsSubdirsPriFinished(QString repository);
     void generateSubdirsProFinished(QString repository);
     void checkPodFinished(QString repository, QString podName, bool isValidPod);
+    void createProjectFinished(QString repository, bool success);
 
 private:
     void purgePodInfo(QString repository, QString podName);
