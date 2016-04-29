@@ -51,23 +51,15 @@ bool PodManager::installPod(QString repository, Pod pod) {
         return false;
     }
 
-    QDir cwd = QDir::current();
-    QDir::setCurrent(repository);
-
-    int result = QProcess::execute(QString("git submodule add %1 %2").arg(pod.url).arg(pod.name));
-
-    QDir::setCurrent(cwd.absolutePath());
-
-    if(result != 0) {
+    if(!addPodSubmodule(repository, pod)) {
         emit installPodFinished(repository, pod, false);
         return false;
     }
 
     // Try to store meta data in .gitmodules
     writePodInfo(repository, pod);
-    generatePodsPri(repository);
-    generatePodsSubdirsPri(repository);
-    generateSubdirsPro(repository);
+
+    generateQmakeFiles(repository);
 
     emit installPodFinished(repository, pod, true);
     return true;
@@ -79,28 +71,17 @@ bool PodManager::installPods(QString repository, QList<Pod> pods) {
         return false;
     }
 
-    QDir cwd = QDir::current();
-    QDir::setCurrent(repository);
-
     bool success = true;
     foreach(Pod pod, pods) {
-        int result = QProcess::execute(QString("git submodule add %1 %2").arg(pod.url).arg(pod.name));
-        if(result == 0) {
-            writePodInfo(repository, pod);
-        }
-        success = success && (result == 0);
+        success = success && addPodSubmodule(repository, pod);
     }
-
-    QDir::setCurrent(cwd.absolutePath());
 
     if(!success) {
         emit installPodsFinished(repository, pods, false);
         return false;
     }
 
-    generatePodsPri(repository);
-    generatePodsSubdirsPri(repository);
-    generateSubdirsPro(repository);
+    generateQmakeFiles(repository);
 
     emit installPodsFinished(repository, pods, true);
     return true;
@@ -112,29 +93,12 @@ bool PodManager::removePod(QString repository, QString podName) {
         return false;
     }
 
-    QDir cwd = QDir::current();
-    QDir::setCurrent(repository);
-
-    int deinitResult = -1, remove1Result = -1, remove2Result = -1;
-    deinitResult = QProcess::execute(QString("git submodule deinit -f %1").arg(podName));
-    if(deinitResult == 0) {
-        remove1Result = QProcess::execute(QString("git rm -rf %1").arg(podName));
-        if(remove1Result == 0) {
-            remove2Result = QProcess::execute(QString("rm -rf %1/.git/modules/%2").arg(repository).arg(podName));
-        }
-    }
-
-    QDir::setCurrent(cwd.absolutePath());
-
-    if((deinitResult != 0) && (remove1Result != 0) && (remove2Result != 0)) {
+    if(!removePodSubmodule(repository, podName)) {
         emit removePodFinished(repository, podName, false);
         return false;
     }
 
-    purgePodInfo(repository, podName);
-    generatePodsPri(repository);
-    generatePodsSubdirsPri(repository);
-    generateSubdirsPro(repository);
+    generateQmakeFiles(repository);
 
     emit removePodFinished(repository, podName, true);
     return true;
@@ -146,33 +110,17 @@ bool PodManager::removePods(QString repository, QStringList podNames) {
         return false;
     }
 
-    QDir cwd = QDir::current();
-    QDir::setCurrent(repository);
-
     bool success = true;
     foreach(QString podName, podNames) {
-        int deinitResult = -1, remove1Result = -1, remove2Result = -1;
-        deinitResult = QProcess::execute(QString("git submodule deinit -f %1").arg(podName));
-        if(deinitResult == 0) {
-            remove1Result = QProcess::execute(QString("git rm -rf %1").arg(podName));
-            if(remove1Result == 0) {
-                remove2Result = QProcess::execute(QString("rm -rf %1/.git/modules/%2").arg(repository).arg(podName));
-                purgePodInfo(repository, podName);
-            }
-        }
-        success = success && ((deinitResult == 0) && (remove1Result == 0) && (remove2Result == 0));
+        success = success && removePodSubmodule(repository, podName);
     }
-
-    QDir::setCurrent(cwd.absolutePath());
 
     if(!success) {
         emit removePodsFinished(repository, podNames, false);
         return false;
     }
 
-    generatePodsPri(repository);
-    generatePodsSubdirsPri(repository);
-    generateSubdirsPro(repository);
+    generateQmakeFiles(repository);
 
     emit removePodsFinished(repository, podNames, true);
     return true;
@@ -184,20 +132,7 @@ bool PodManager::updatePod(QString repository, QString podName) {
         return false;
     }
 
-    QDir cwd = QDir::current();
-    QDir::setCurrent(QDir(repository).absoluteFilePath(podName));
-
-    int stashResult = 1, checkoutResult = 1, pullResult = 1, stashApplyResult = 1;
-    stashResult = QProcess::execute(QString("git stash"));
-    if(stashResult == 0) {
-        checkoutResult = QProcess::execute(QString("git checkout master"));
-        if(checkoutResult == 0) {
-            pullResult = QProcess::execute(QString("git pull"));
-        }
-    }
-
-    QDir::setCurrent(cwd.absolutePath());
-    bool result = (stashResult == 0) && (checkoutResult == 0) && (pullResult == 0) && (stashApplyResult == 0);
+    bool result = updatePodSubmodule(repository, podName);
     emit updatePodFinished(repository, podName, result);
     return result;
 }
@@ -208,24 +143,10 @@ bool PodManager::updatePods(QString repository, QStringList podNames) {
         return false;
     }
 
-    QDir cwd = QDir::current();
-
     bool success = true;
     foreach(QString podName, podNames) {
-        QDir::setCurrent(QDir(repository).absoluteFilePath(podName));
-
-        int stashResult = 1, checkoutResult = 1, pullResult = 1;
-        stashResult = QProcess::execute(QString("git stash"));
-        if(stashResult == 0) {
-            checkoutResult = QProcess::execute(QString("git checkout master"));
-            if(checkoutResult == 0) {
-                pullResult = QProcess::execute(QString("git pull"));
-            }
-        }
-        success = success && ((stashResult == 0) && (checkoutResult == 0) && (pullResult == 0));
+        success = success && updatePodSubmodule(repository, podName);
     }
-
-    QDir::setCurrent(cwd.absolutePath());
 
     if(!success) {
         emit updatePodsFinished(repository, podNames, false);
@@ -251,9 +172,7 @@ bool PodManager::updateAllPods(QString repository) {
         return false;
     }
 
-    generatePodsPri(repository);
-    generatePodsSubdirsPri(repository);
-    generateSubdirsPro(repository);
+    generateQmakeFiles(repository);
 
     emit updateAllPodsFinished(repository, true);
     return true;
@@ -465,15 +384,39 @@ bool PodManager::createProject(QString repository) {
         return false;
     }
 
-    generatePodsPri(repository);
-    generatePodsSubdirsPri(repository);
-    generateSubdirsPro(repository);
+    generateQmakeFiles(repository);
 
     emit createProjectFinished(repository, true);
     return true;
 }
 
-void PodManager::purgePodInfo(QString repository, QString podName) {
+void PodManager::makeSureInRepositoryDirectory(QString repository) {
+    QDir::setCurrent(repository);
+}
+
+bool PodManager::removePodSubmodule(QString repository, QString podName) {
+    makeSureInRepositoryDirectory(repository);
+    return runCommand(QString("git submodule deinit -f %1").arg(podName)) &&
+        runCommand(QString("git rm -rf %1").arg(podName)) &&
+        runCommand(QString("rm -rf %1/.git/modules/%2").arg(repository).arg(podName)) &&
+        purgePodInfo(repository, podName);
+}
+
+bool PodManager::addPodSubmodule(QString repository, Pod pod) {
+    makeSureInRepositoryDirectory(repository);
+    return runCommand(QString("git submodule add %1 %2").arg(pod.url).arg(pod.name)) &&
+        writePodInfo(repository, pod);
+}
+
+bool PodManager::updatePodSubmodule(QString repository, QString podName) {
+    QDir::setCurrent(QDir(repository).absoluteFilePath(podName));
+    bool result = runCommand(QString("git stash")) &&
+        runCommand(QString("git checkout master")) &&
+        runCommand(QString("git pull"));
+    return result;
+}
+
+bool PodManager::purgePodInfo(QString repository, QString podName) {
     QDir dir(repository);
     QString podinfoPath = dir.filePath(".podinfo");
     QSettings podinfo(podinfoPath, QSettings::IniFormat);
@@ -481,10 +424,10 @@ void PodManager::purgePodInfo(QString repository, QString podName) {
     podinfo.remove(podName);
     podinfo.sync();
 
-    stageFile(repository, ".podinfo");
+    return stageFile(repository, ".podinfo");
 }
 
-void PodManager::writePodInfo(QString repository, Pod pod) {
+bool PodManager::writePodInfo(QString repository, Pod pod) {
     QDir dir(repository);
     QString podinfoPath = dir.filePath(".podinfo");
     QSettings podinfo(podinfoPath, QSettings::IniFormat);
@@ -497,7 +440,7 @@ void PodManager::writePodInfo(QString repository, Pod pod) {
         podinfo.endGroup();
     podinfo.sync();
 
-    stageFile(repository, ".podinfo");
+    return stageFile(repository, ".podinfo");
 }
 
 void PodManager::readPodInfo(QString repository, Pod& pod) {
@@ -516,16 +459,32 @@ void PodManager::readPodInfo(QString repository, Pod& pod) {
     }
 }
 
-void PodManager::stageFile(QString repository, QString fileName) {
-    QDir cwd = QDir::current();
-    QDir::setCurrent(repository);
-    QProcess::execute(QString("git add %1").arg(fileName));
-    QDir::setCurrent(cwd.absolutePath());
+bool PodManager::stageFile(QString repository, QString fileName) {
+    makeSureInRepositoryDirectory(repository);
+    return runCommand(QString("git add %1").arg(fileName));
 }
 
 void PodManager::waitForReply(QNetworkReply *reply) {
     QEventLoop loop;
     connect(reply, SIGNAL(finished()), &loop, SLOT(quit()));
     loop.exec();
+}
+
+void PodManager::generateQmakeFiles(QString repository) {
+    makeSureInRepositoryDirectory(repository);
+    generatePodsPri(repository);
+    generatePodsSubdirsPri(repository);
+    generateSubdirsPro(repository);
+}
+
+bool PodManager::runCommand(QString command) {
+    return 0 == QProcess::execute(command);
+}
+
+QString PodManager::runCommandAndParse(QString command) {
+    QProcess *process = new QProcess;
+    process->start(command);
+    process->waitForFinished();
+    return process->readAllStandardOutput();
 }
 

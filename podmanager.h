@@ -40,7 +40,6 @@ public:
     PodManager(QObject *parent = 0);
 
 public slots:
-    /** @returns true it the provided repository is a git repository. */
     bool isGitRepository(QString repository);
 
     /** Install the given pod to the repository. */
@@ -122,12 +121,23 @@ signals:
     void createProjectFinished(QString repository, bool success);
 
 private:
-    void purgePodInfo(QString repository, QString podName);
-    void writePodInfo(QString repository, Pod pod);
+    void makeSureInRepositoryDirectory(QString repository);
+
+    bool removePodSubmodule(QString repository, QString podName);
+    bool addPodSubmodule(QString repository, Pod pod);
+    bool updatePodSubmodule(QString repository, QString podName);
+
+    bool purgePodInfo(QString repository, QString podName);
+    bool writePodInfo(QString repository, Pod pod);
     void readPodInfo(QString repository, Pod& pod);
 
-    void stageFile(QString repository, QString fileName);
+    bool stageFile(QString repository, QString fileName);
     void waitForReply(QNetworkReply *reply);
+
+    void generateQmakeFiles(QString repository);
+
+    bool runCommand(QString command);
+    QString runCommandAndParse(QString command);
 
     QNetworkAccessManager *_networkAccessManager;
 };

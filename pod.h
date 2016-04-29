@@ -31,4 +31,5 @@ struct Pod {
 
     QString url;
     QString website;
+    QString hash;
 };
